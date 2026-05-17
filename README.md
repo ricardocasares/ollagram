@@ -25,6 +25,7 @@ Optional:
 
 - `SYSTEM_PROMPT`: full replacement for the built-in system prompt.
 - `SYSTEM_PROMPT_APPEND`: extra instructions appended to the built-in system prompt.
+- `RUST_LOG`: log filter for Rust logs. Defaults to `info`; use `ollagram=debug` temporarily for webhook diagnostics.
 
 Local defaults for `OPENAI_URL` and `OPENAI_MODEL` live in `.cargo/config.toml`. Local secrets can be placed in `.cargo/secrets.toml`, which is ignored by Git and optional for Cargo.
 

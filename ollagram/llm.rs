@@ -365,10 +365,7 @@ mod tests {
 
         assert_eq!(tool.name, FOLLOW_UP_ACTIONS_TOOL_NAME);
         assert!(!tool.description.contains("Telegram"));
-        assert!(
-            tool.description
-                .contains("same language the user is using")
-        );
+        assert!(tool.description.contains("same language the user is using"));
         assert_eq!(schema["type"], json!("object"));
         assert_eq!(schema["additionalProperties"], json!(false));
         assert_eq!(schema["required"], json!(["actions"]));
