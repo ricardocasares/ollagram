@@ -3,9 +3,88 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>rusty bot</title>
+    <title>Ollagram Bot</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --background: white;
+        --foreground: black;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --background: black;
+          --foreground: white;
+        }
+      }
+
+      html,
+      body {
+        box-sizing: border-box;
+        margin: 0;
+        min-height: 100%;
+        background: var(--background);
+        color: var(--foreground);
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: inherit;
+      }
+
+      body {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      main {
+        display: flex;
+        width: min(100%, 720px);
+        padding: 32px;
+        flex-direction: column;
+        align-items: center;
+        gap: 32px;
+      }
+
+      .logo {
+        display: block;
+        width: min(100%, 320px);
+        height: min(458px, calc((100vw - 64px) * 630.444 / 578.192));
+        aspect-ratio: 578.192 / 630.444;
+        background: currentColor;
+        mask: url("./ollagram.svg") center / contain no-repeat;
+        -webkit-mask: url("./ollagram.svg") center / contain no-repeat;
+      }
+
+      .deploy img {
+        display: block;
+        width: 80px;
+        height: auto;
+      }
+    </style>
   </head>
   <body>
-    <h1>Rusty bot is running.</h1>
+    <main>
+      <div class="logo" role="img" aria-label="Ollagram"></div>
+      <a
+        class="deploy"
+        href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fricardocasares%2Follagram&amp;env=TELEGRAM_BOT_TOKEN%2CWEBHOOK_SECRET%2COPENAI_API_KEY%2COPENAI_URL%2COPENAI_MODEL%2CSYSTEM_PROMPT%2CSYSTEM_PROMPT_APPEND&amp;envDefaults=%7B%22TELEGRAM_BOT_TOKEN%22%3A%22_your_telegram_bot_token_%22%2C%22WEBHOOK_SECRET%22%3A%22_random_secret_%22%2C%22OPENAI_API_KEY%22%3A%22_your_api_key_%22%2C%22OPENAI_URL%22%3A%22https%3A%2F%2Follama.com%2Fv1%22%2C%22OPENAI_MODEL%22%3A%22gpt-oss%3A120b-cloud%22%2C%22SYSTEM_PROMPT%22%3A%22%22%2C%22SYSTEM_PROMPT_APPEND%22%3A%22%22%7D&amp;project-name=ollagrambot&amp;repository-name=ollagrambot"
+      >
+        <img
+          src="https://vercel.com/button"
+          alt="Deploy with Vercel"
+          width="80"
+          height="24"
+        />
+      </a>
+    </main>
   </body>
 </html>
