@@ -1,5 +1,7 @@
 # Ollagram
 
+![Ollagram](./public/ollagram.png)
+
 Telegram bot written in Rust and deployed as a Vercel Rust function.
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fricardocasares%2Follagram&env=TELEGRAM_BOT_TOKEN%2CWEBHOOK_SECRET%2COPENAI_API_KEY%2COPENAI_URL%2COPENAI_MODEL%2CSYSTEM_PROMPT%2CSYSTEM_PROMPT_APPEND&envDefaults=%7B%22TELEGRAM_BOT_TOKEN%22%3A%22_your_telegram_bot_token_%22%2C%22WEBHOOK_SECRET%22%3A%22_random_secret_%22%2C%22OPENAI_API_KEY%22%3A%22_your_api_key_%22%2C%22OPENAI_URL%22%3A%22https%3A%2F%2Follama.com%2Fv1%22%2C%22OPENAI_MODEL%22%3A%22gpt-oss%3A120b-cloud%22%2C%22SYSTEM_PROMPT%22%3A%22%22%2C%22SYSTEM_PROMPT_APPEND%22%3A%22%22%7D&project-name=ollagrambot&repository-name=ollagrambot)
