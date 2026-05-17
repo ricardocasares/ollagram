@@ -1,0 +1,12 @@
+{
+  "name": "ollagram",
+  "private": true,
+  "packageManager": "bun@1.3.14",
+  "scripts": {
+    "build": "bun run scripts/webhook.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^6.0.3"
+  }
+}

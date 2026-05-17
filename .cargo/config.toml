@@ -1,0 +1,10 @@
+include = [{ path = "secrets.toml", optional = true }]
+
+[env]
+OPENAI_MODEL = { value = "gpt-oss:120b-cloud" }
+OPENAI_URL = { value = "https://ollama.com/v1" }
+# SYSTEM_PROMPT = { value = "Talk like a goddam pirate all the freaking time" }
+# SYSTEM_PROMPT_APPEND = { value = "Talk with tons of emojis" }
+
+[alias]
+dev = "run --bin polling"

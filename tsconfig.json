@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "module": "esnext",
+    "target": "esnext",
+    "types": ["bun"],
+    "noEmit": true,
+    "strict": true
+  },
+  "include": ["scripts/**/*.ts"]
+}
