@@ -13,8 +13,8 @@ pub const FOLLOW_UP_ACTIONS_TOOL_NAME: &str = "follow_up_actions";
 const FOLLOW_UP_ACTION_LIMIT: usize = 3;
 const CALLBACK_KEY_LIMIT: usize = 64;
 const SYSTEM_PROMPT: &str = concat!(
-    "Keep responses short unless explicitly told to expand.",
-    "Avoid using markdown tables and '---'",
+    "Keep responses short unless explicitly told to expand. ",
+    "Avoid using markdown tables and '---'. ",
     "You are a helpful assistant with access to tools. ",
     "For every answer, call the follow_up_actions tool exactly once before the final response. ",
     "Use it to structure the answer into one to three useful menu buttons for navigation, refinement, or next steps. ",
@@ -23,6 +23,7 @@ const SYSTEM_PROMPT: &str = concat!(
     "Key values are callback data and must be stable, concise, and 1-64 UTF-8 bytes. ",
     "Use namespaced keys like explain:concepts. ",
     "The prompt can be longer than the key and should express the full intent behind the menu item. ",
+    "Write each prompt in the same language the user is using with you. ",
     "Send URLs through follow_up_actions url buttons, not in the final response text. ",
     "Use url buttons only for real known URLs. Do not invent YouTube links, website links, map links, document links, or any other direct URLs. ",
     "When you are not certain of an exact real URL, use a YouTube, Spotify, or Google search URL instead. ",
@@ -169,6 +170,7 @@ fn follow_up_actions() -> Tool {
             "The key is callback data and must be 1-64 UTF-8 bytes. ",
             "The label is the button text. ",
             "The prompt is returned in the tool output so later callbacks can resolve the key from message history and continue with the selected menu item. ",
+            "Write each prompt in the same language the user is using with you. ",
             "Send URLs through url actions, not in final response text. ",
             "The url is used only for real known URLs. Do not invent direct URLs. Use YouTube, Spotify, or Google search URLs when unsure."
         ))
@@ -322,6 +324,7 @@ mod tests {
     #[test]
     fn system_prompt_uses_default_without_append() {
         assert_eq!(system_prompt(&config(None, None)).as_ref(), SYSTEM_PROMPT);
+        assert!(SYSTEM_PROMPT.contains("same language the user is using"));
     }
 
     #[test]
@@ -362,6 +365,10 @@ mod tests {
 
         assert_eq!(tool.name, FOLLOW_UP_ACTIONS_TOOL_NAME);
         assert!(!tool.description.contains("Telegram"));
+        assert!(
+            tool.description
+                .contains("same language the user is using")
+        );
         assert_eq!(schema["type"], json!("object"));
         assert_eq!(schema["additionalProperties"], json!(false));
         assert_eq!(schema["required"], json!(["actions"]));
