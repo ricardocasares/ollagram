@@ -328,7 +328,7 @@ fn validate_label(label: &str) -> Result<(), String> {
 }
 
 fn validate_callback_key(key: &str) -> Result<(), String> {
-    match key.as_bytes().len() {
+    match key.len() {
         1..=CALLBACK_KEY_LIMIT => Ok(()),
         0 => Err(String::from("callback key must not be empty")),
         length => Err(format!(

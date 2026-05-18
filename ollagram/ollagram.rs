@@ -311,10 +311,7 @@ where
     let follow_up_actions =
         follow_up_actions_from_response_messages(&response_messages, input_count);
     append_response_messages(storage, chat_id, response_messages, input_count)?;
-    let keyboard = match follow_up_actions {
-        Some(actions) => Some(actions.into_keyboard()),
-        None => None,
-    };
+    let keyboard = follow_up_actions.map(FollowUpActionsResult::into_keyboard);
     let last_sent_message_id =
         send_final_messages(telegram, chat_id, &draft_state.formatted_chunks).await?;
     log::debug!("last sent telegram message id: {last_sent_message_id:?}");
@@ -351,11 +348,8 @@ async fn send_current_draft(
     draft_state.format_current();
     draft_state.last_draft_at = Instant::now();
 
-    match draft_state.formatted_chunks.first() {
-        Some(text) => {
-            send_message_draft_best_effort(telegram, chat_id, draft_id, text.clone()).await;
-        }
-        None => {}
+    if let Some(text) = draft_state.formatted_chunks.first() {
+        send_message_draft_best_effort(telegram, chat_id, draft_id, text.clone()).await;
     }
 
     Ok(())
