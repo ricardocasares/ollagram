@@ -1,7 +1,7 @@
 use crate::{
     config, ollagram,
     storage::InMemoryStorage,
-    telegram::{CallbackQuery, Message, Telegram, Update, UpdateTag},
+    telegram::{CallbackQuery, Telegram, Update, UpdateTag},
 };
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
@@ -120,17 +120,9 @@ fn callback_query_log_tag(callback_query: &CallbackQuery) -> UpdateLogTag {
 
     UpdateLogTag::CallbackQuery {
         callback_query_id: callback_query.id.clone(),
-        chat_id: message.map(message_chat_id),
-        message_id: message.map(message_id),
+        chat_id: message.map(|message| message.chat.id),
+        message_id: message.map(|message| message.message_id),
     }
-}
-
-fn message_chat_id(message: &Message) -> i64 {
-    message.chat.id
-}
-
-fn message_id(message: &Message) -> i64 {
-    message.message_id
 }
 
 impl fmt::Display for UpdateLogSummary {

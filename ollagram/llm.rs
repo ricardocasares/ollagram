@@ -152,14 +152,6 @@ pub async fn stream_with_tool(
     config: &Config,
     system_prompt_suffix: Option<&str>,
 ) -> aisdk::Result<StreamTextResponse> {
-    stream_with_tool_request(messages, config, system_prompt_suffix).await
-}
-
-async fn stream_with_tool_request(
-    messages: Messages,
-    config: &Config,
-    system_prompt_suffix: Option<&str>,
-) -> aisdk::Result<StreamTextResponse> {
     let model = build_model(config)?;
 
     LanguageModelRequest::builder()
