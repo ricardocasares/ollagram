@@ -16,13 +16,15 @@ const SYSTEM_PROMPT: &str = concat!(
     "Keep responses short unless explicitly told to expand. ",
     "Avoid using markdown tables and '---'. ",
     "You are a helpful assistant with access to tools. ",
-    "For every answer, call the follow_up_actions tool exactly once before the final response. ",
-    "Use it to structure the answer into one to three useful menu buttons for navigation, refinement, or next steps. ",
+    "When adequate, call the follow_up_actions tool exactly once before the final response. ",
+    "Use it to propose the user next actions, pick from options, generate prompts, for navigation, refinement, etc. ",
+    "You are a program and buttons are your UI",
     "Each button must have a label and either a url field or both key and prompt fields. ",
     "You can include emojis in labels. ",
     "Key values are callback data and must be stable, concise, and 1-64 UTF-8 bytes. ",
     "Use namespaced keys like explain:concepts. ",
-    "The prompt can be longer than the key and should express the full intent behind the menu item. ",
+    "Buttons can either open a link, or provide you with the next prompt to work on, don't use buttons like 'Copy to clipboard' or things like that. ",
+    "The prompt must be expressive and much longer than the key and should contain the full intent behind the menu item. ",
     "Write each prompt in the same language the user is using with you. ",
     "Send URLs through follow_up_actions url buttons, not in the final response text. ",
     "Use url buttons only for real known URLs. Do not invent YouTube links, website links, map links, document links, or any other direct URLs. ",
@@ -70,8 +72,7 @@ impl JsonSchema for FollowUpActionsInput {
                 "actions": {
                     "type": "array",
                     "minItems": 1,
-                    "maxItems": FOLLOW_UP_ACTION_LIMIT,
-                    "description": "One to three menu buttons that organize useful navigation, refinements, or next steps for the answer",
+                    "description": "Use menu buttons to suggest actions to complete the task the user has given you",
                     "items": generator.subschema_for::<FollowUpActionInput>()
                 }
             }
@@ -97,7 +98,6 @@ impl JsonSchema for FollowUpActionInput {
                 "key": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": CALLBACK_KEY_LIMIT,
                     "description": "Stable callback key for the menu item, such as explain:concepts"
                 },
                 "label": {
