@@ -5,7 +5,7 @@ use crate::{
 };
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
-use std::{fmt, sync::LazyLock};
+use std::{fmt, sync::LazyLock, time::Duration};
 use vercel_runtime::{AppState, Error, Request, Response};
 
 const TELEGRAM_SECRET_HEADER: &str = "x-telegram-bot-api-secret-token";
@@ -31,7 +31,13 @@ pub async fn handler(req: Request, state: AppState) -> Result<Response<Value>, E
         return response(401, json!({ "ok": false }));
     }
 
-    let telegram = Telegram::new(cfg.telegram_token.clone());
+    let telegram = Telegram::with_retry_policy(
+        cfg.telegram_token.clone(),
+        crate::telegram::TelegramRetryPolicy::Limited {
+            retries: 1,
+            max_delay: Duration::from_secs(2),
+        },
+    );
     let body = match req.into_body().collect().await {
         Ok(body) => body.to_bytes(),
         Err(error) => {
@@ -47,7 +53,7 @@ pub async fn handler(req: Request, state: AppState) -> Result<Response<Value>, E
             state
                 .log_context
                 .error(&format!("webhook update parse failed: {error}"));
-            return Err(error.into());
+            return response(400, json!({ "ok": false }));
         }
     };
     let summary = update_log_summary(&update);
@@ -58,7 +64,6 @@ pub async fn handler(req: Request, state: AppState) -> Result<Response<Value>, E
             state.log_context.error(&format!(
                 "webhook update processing failed: {summary}: {error}"
             ));
-            return Err(error.into());
         }
     }
 

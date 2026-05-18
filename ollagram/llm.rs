@@ -70,9 +70,23 @@ struct FollowUpActionInput {
     url: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+enum FollowUpAction {
+    Prompt {
+        key: String,
+        label: String,
+        prompt: String,
+    },
+    Url {
+        label: String,
+        url: String,
+    },
+}
+
 #[derive(Debug, Serialize)]
 struct FollowUpActionsOutput {
-    actions: Vec<Vec<FollowUpActionInput>>,
+    actions: Vec<Vec<FollowUpAction>>,
     inline_keyboard: Vec<Vec<InlineKeyboardButton>>,
 }
 
@@ -240,65 +254,63 @@ fn execute_follow_up_actions(input: serde_json::Value) -> Result<String, String>
 
 fn validate_actions(
     actions: Vec<Vec<FollowUpActionInput>>,
-) -> Result<Vec<Vec<FollowUpActionInput>>, String> {
+) -> Result<Vec<Vec<FollowUpAction>>, String> {
     match actions.len() {
-        1.. => {
-            for row in &actions {
-                validate_action_row(row)?;
-            }
-
-            Ok(actions)
-        }
+        1.. => actions.into_iter().map(validate_action_row).collect(),
         0 => Err(String::from(
             "follow up actions must include at least one action",
         )),
     }
 }
 
-fn validate_action_row(row: &[FollowUpActionInput]) -> Result<(), String> {
+fn validate_action_row(row: Vec<FollowUpActionInput>) -> Result<Vec<FollowUpAction>, String> {
     match row.len() {
-        1.. => {
-            for action in row {
-                validate_label(&action.label)?;
-                validate_action_target(action)?;
-            }
-
-            Ok(())
-        }
+        1.. => row.into_iter().map(validate_action).collect(),
         0 => Err(String::from("follow up action rows must not be empty")),
     }
 }
 
-fn action_to_button_row(row: &[FollowUpActionInput]) -> Vec<InlineKeyboardButton> {
-    row.iter().filter_map(action_to_button).collect()
+fn action_to_button_row(row: &[FollowUpAction]) -> Vec<InlineKeyboardButton> {
+    row.iter().map(action_to_button).collect()
 }
 
-fn action_to_button(action: &FollowUpActionInput) -> Option<InlineKeyboardButton> {
-    match (&action.key, &action.prompt, &action.url) {
-        (Some(key), Some(_prompt), None) => Some(InlineKeyboardButton::CallbackData {
-            text: action.label.clone(),
+fn action_to_button(action: &FollowUpAction) -> InlineKeyboardButton {
+    match action {
+        FollowUpAction::Prompt {
+            key,
+            label,
+            prompt: _prompt,
+        } => InlineKeyboardButton::CallbackData {
+            text: label.clone(),
             callback_data: key.clone(),
-        }),
-        (None, None, Some(url)) => Some(InlineKeyboardButton::Url {
-            text: action.label.clone(),
+        },
+        FollowUpAction::Url { label, url } => InlineKeyboardButton::Url {
+            text: label.clone(),
             url: url.clone(),
-        }),
-        (Some(_key), None, None) => None,
-        (None, Some(_prompt), None) => None,
-        (None, None, None) => None,
-        (Some(_key), Some(_prompt), Some(_url)) => None,
-        (Some(_key), None, Some(_url)) => None,
-        (None, Some(_prompt), Some(_url)) => None,
+        },
     }
 }
 
-fn validate_action_target(action: &FollowUpActionInput) -> Result<(), String> {
-    match (&action.key, &action.prompt, &action.url) {
+fn validate_action(action: FollowUpActionInput) -> Result<FollowUpAction, String> {
+    validate_label(&action.label)?;
+
+    match (action.key, action.prompt, action.url) {
         (Some(key), Some(prompt), None) => {
-            validate_callback_key(key)?;
-            validate_prompt(prompt)
+            validate_callback_key(&key)?;
+            validate_prompt(&prompt)?;
+            Ok(FollowUpAction::Prompt {
+                key,
+                label: action.label,
+                prompt,
+            })
         }
-        (None, None, Some(url)) => validate_url(url),
+        (None, None, Some(url)) => {
+            validate_url(&url)?;
+            Ok(FollowUpAction::Url {
+                label: action.label,
+                url,
+            })
+        }
         (Some(_key), None, None) => Err(String::from(
             "menu prompt action must include both key and prompt",
         )),

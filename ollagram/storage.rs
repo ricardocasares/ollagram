@@ -10,7 +10,7 @@ use std::{
 pub trait MessageStorage: Clone + Send + Sync + 'static {
     fn messages(&self, chat_id: ChatId) -> Result<Messages, StorageError>;
     fn replace_messages(&self, chat_id: ChatId, messages: Messages) -> Result<(), StorageError>;
-    fn append_message(&self, chat_id: ChatId, message: Message) -> Result<Messages, StorageError>;
+    fn append_message(&self, chat_id: ChatId, message: Message) -> Result<(), StorageError>;
     fn clear_messages(&self, chat_id: ChatId) -> Result<(), StorageError>;
 }
 
@@ -57,14 +57,12 @@ impl MessageStorage for InMemoryStorage {
             })
     }
 
-    fn append_message(&self, chat_id: ChatId, message: Message) -> Result<Messages, StorageError> {
+    fn append_message(&self, chat_id: ChatId, message: Message) -> Result<(), StorageError> {
         self.conversations
             .write()
             .map_err(|_error| StorageError::LockPoisoned)
             .map(|mut conversations| {
-                let messages = conversations.entry(chat_id).or_default();
-                messages.push(message);
-                messages.clone()
+                conversations.entry(chat_id).or_default().push(message);
             })
     }
 

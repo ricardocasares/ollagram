@@ -8,6 +8,7 @@ const CHAT_ACTION_INTERVAL: Duration = Duration::from_secs(4);
 pub struct Telegram {
     token: String,
     client: reqwest::Client,
+    retry_policy: TelegramRetryPolicy,
 }
 
 #[derive(Debug)]
@@ -35,6 +36,23 @@ impl fmt::Display for TelegramClientError {
 }
 
 impl Error for TelegramClientError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TelegramRetryPolicy {
+    Unlimited,
+    Limited { retries: usize, max_delay: Duration },
+}
+
+impl TelegramRetryPolicy {
+    fn retry_delay(self, retry_count: usize, delay: Duration) -> Option<Duration> {
+        match self {
+            Self::Unlimited => Some(delay),
+            Self::Limited { retries, max_delay } => {
+                (retry_count < retries && delay <= max_delay).then_some(delay)
+            }
+        }
+    }
+}
 
 #[derive(Debug, Serialize)]
 struct GetUpdatesRequest {
@@ -199,9 +217,14 @@ impl CallbackQueryAnswer {
 
 impl Telegram {
     pub fn new(token: String) -> Self {
+        Self::with_retry_policy(token, TelegramRetryPolicy::Unlimited)
+    }
+
+    pub fn with_retry_policy(token: String, retry_policy: TelegramRetryPolicy) -> Self {
         Self {
             token,
             client: reqwest::Client::new(),
+            retry_policy,
         }
     }
 
@@ -317,6 +340,7 @@ impl Telegram {
         R: for<'de> Deserialize<'de>,
     {
         let url = format!("{}/bot{}/{}", TELEGRAM_API_URL, self.token, method);
+        let mut retry_count = 0;
 
         loop {
             let response = self
@@ -333,12 +357,14 @@ impl Telegram {
             match response {
                 TelegramResponse::Ok { result } => return Ok(result),
                 TelegramResponse::Err(error) => match error.retry_after() {
-                    Some(delay) => {
+                    Some(delay) if self.retry_policy.retry_delay(retry_count, delay).is_some() => {
+                        retry_count += 1;
                         log::warn!(
                             "telegram rate limited method {method}; retrying after {delay:?}"
                         );
                         tokio::time::sleep(delay).await;
                     }
+                    Some(_delay) => return Err(TelegramClientError::Api(error)),
                     None => return Err(TelegramClientError::Api(error)),
                 },
             }
@@ -693,8 +719,8 @@ mod tests {
         ErrorCode, ForceReply, GetUpdatesOptions, InlineKeyboardButton, InlineKeyboardMarkup,
         KeyboardButton, MessageDraftId, MessageTag, ParseMode, ReplyKeyboardMarkup,
         ReplyParameters, RetryAfterParameters, SendChatActionRequest, SendMessageDraftRequest,
-        SendMessageOptions, SendMessageRequest, TelegramError, TelegramResponse, Update, UpdateTag,
-        with_interval,
+        SendMessageOptions, SendMessageRequest, TelegramError, TelegramResponse,
+        TelegramRetryPolicy, Update, UpdateTag, with_interval,
     };
     use serde_json::json;
     use std::{
@@ -1126,6 +1152,38 @@ mod tests {
         };
 
         assert_eq!(error.retry_after(), Some(Duration::from_secs(3)));
+    }
+
+    #[test]
+    fn unlimited_retry_policy_allows_retry_after_delay() {
+        assert_eq!(
+            TelegramRetryPolicy::Unlimited.retry_delay(usize::MAX, Duration::from_secs(60)),
+            Some(Duration::from_secs(60))
+        );
+    }
+
+    #[test]
+    fn limited_retry_policy_permits_exact_budget() {
+        let policy = TelegramRetryPolicy::Limited {
+            retries: 1,
+            max_delay: Duration::from_secs(2),
+        };
+
+        assert_eq!(
+            policy.retry_delay(0, Duration::from_secs(2)),
+            Some(Duration::from_secs(2))
+        );
+        assert_eq!(policy.retry_delay(1, Duration::from_secs(2)), None);
+    }
+
+    #[test]
+    fn limited_retry_policy_refuses_excessive_delay() {
+        let policy = TelegramRetryPolicy::Limited {
+            retries: 1,
+            max_delay: Duration::from_secs(2),
+        };
+
+        assert_eq!(policy.retry_delay(0, Duration::from_secs(3)), None);
     }
 
     #[test]

@@ -80,29 +80,34 @@ struct FollowUpActionsResult {
 }
 
 #[derive(Debug, Deserialize)]
-struct FollowUpActionResult {
-    key: Option<String>,
-    prompt: Option<String>,
-    url: Option<String>,
+#[serde(untagged)]
+enum FollowUpActionResult {
+    Prompt {
+        key: String,
+        label: String,
+        prompt: String,
+    },
+    Url {
+        label: String,
+        url: String,
+    },
 }
 
 impl FollowUpActionsResult {
     fn log_actions(&self) {
         for row in &self.actions {
             for action in row {
-                match (&action.key, &action.prompt, &action.url) {
-                    (Some(key), Some(prompt), None) => {
+                match action {
+                    FollowUpActionResult::Prompt {
+                        key,
+                        label: _label,
+                        prompt,
+                    } => {
                         log::debug!("follow up action key {key} maps to prompt {prompt}");
                     }
-                    (None, None, Some(url)) => {
+                    FollowUpActionResult::Url { label: _label, url } => {
                         log::debug!("menu action opens url {url}");
                     }
-                    (Some(_key), None, None) => {}
-                    (None, Some(_prompt), None) => {}
-                    (None, None, None) => {}
-                    (Some(_key), Some(_prompt), Some(_url)) => {}
-                    (Some(_key), None, Some(_url)) => {}
-                    (None, Some(_prompt), Some(_url)) => {}
                 }
             }
         }
@@ -222,7 +227,7 @@ async fn process_prompt<S>(
     chat_id: ChatId,
     draft_id: MessageDraftId,
     prompt: Messages,
-    system_prompt_suffix: Option<String>,
+    system_prompt_suffix: String,
     storage: &S,
     config: &Config,
     telegram: &Telegram,
@@ -236,7 +241,7 @@ where
             let input_count = history.len();
 
             let mut response =
-                llm::stream_with_tool(history, config, system_prompt_suffix.as_deref()).await?;
+                llm::stream_with_tool(history, config, Some(system_prompt_suffix.as_str())).await?;
 
             let draft_state =
                 match consume_response_stream(telegram, chat_id, draft_id, &mut response).await {
@@ -397,11 +402,10 @@ fn append_prompt_messages<S>(
 where
     S: MessageStorage,
 {
-    prompt
-        .into_iter()
-        .try_fold(storage.messages(chat_id)?, |_messages, message| {
-            storage.append_message(chat_id, message)
-        })
+    let mut history = storage.messages(chat_id)?;
+    history.extend(prompt);
+    storage.replace_messages(chat_id, history.clone())?;
+    Ok(history)
 }
 
 fn append_response_messages<S>(
@@ -413,32 +417,26 @@ fn append_response_messages<S>(
 where
     S: MessageStorage,
 {
-    messages
-        .into_iter()
-        .skip(input_count)
-        .try_fold((), |(), message| {
-            storage
-                .append_message(chat_id, message)
-                .map(|_messages| ())
-                .map_err(ProcessError::Storage)
-        })
+    for message in messages.into_iter().skip(input_count) {
+        storage.append_message(chat_id, message)?;
+    }
+
+    Ok(())
 }
 
-fn telegram_user_system_prompt_suffix(user: Option<&TelegramUser>) -> Option<String> {
+fn telegram_user_system_prompt_suffix(user: Option<&TelegramUser>) -> String {
     match user {
         Some(user) => match &user.language_code {
-            Some(language_code) => Some(format!(
+            Some(language_code) => format!(
                 "You are talking to {}, prefer language {} (IETF BCP 47 language tag).",
                 user.first_name, language_code
-            )),
-            None => Some(format!(
+            ),
+            None => format!(
                 "You are talking to {}. Engage using the same language as the user's message.",
                 user.first_name
-            )),
+            ),
         },
-        None => Some(String::from(
-            "Engage using the same language as the user's message.",
-        )),
+        None => String::from("Engage using the same language as the user's message."),
     }
 }
 
@@ -552,8 +550,8 @@ fn selected_key_prompt(key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        DRAFT_INTERVAL, DraftStreamState, append_prompt_messages, append_response_messages,
-        follow_up_actions_from_response_messages, selected_key_prompt,
+        DRAFT_INTERVAL, DraftStreamState, FollowUpActionResult, append_prompt_messages,
+        append_response_messages, follow_up_actions_from_response_messages, selected_key_prompt,
         telegram_user_system_prompt_suffix, to_prompt,
     };
     use crate::{
@@ -757,8 +755,7 @@ mod tests {
         let suffix = telegram_user_system_prompt_suffix(Some(&TelegramUser {
             first_name: String::from("Rick"),
             language_code: Some(String::from("es-AR")),
-        }))
-        .expect("suffix should exist");
+        }));
 
         assert_eq!(
             suffix,
@@ -771,8 +768,7 @@ mod tests {
         let suffix = telegram_user_system_prompt_suffix(Some(&TelegramUser {
             first_name: String::from("Rick"),
             language_code: None,
-        }))
-        .expect("suffix should exist");
+        }));
 
         assert_eq!(
             suffix,
@@ -782,7 +778,7 @@ mod tests {
 
     #[test]
     fn telegram_user_system_prompt_suffix_handles_missing_user() {
-        let suffix = telegram_user_system_prompt_suffix(None).expect("suffix should exist");
+        let suffix = telegram_user_system_prompt_suffix(None);
 
         assert_eq!(
             suffix,
@@ -852,8 +848,13 @@ mod tests {
 
         assert_eq!(actions.actions.len(), 1);
         assert_eq!(actions.actions[0].len(), 2);
-        assert_eq!(actions.actions[0][0].key.as_deref(), Some("new"));
-        assert_eq!(actions.actions[0][0].prompt.as_deref(), Some("New prompt"));
+        match &actions.actions[0][0] {
+            FollowUpActionResult::Prompt { key, prompt, .. } => {
+                assert_eq!(key, "new");
+                assert_eq!(prompt, "New prompt");
+            }
+            FollowUpActionResult::Url { label: _, url: _ } => panic!("expected prompt action"),
+        }
         assert_eq!(
             actions.into_keyboard(),
             InlineKeyboardMarkup {
