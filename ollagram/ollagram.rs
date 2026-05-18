@@ -6,7 +6,7 @@ use crate::{
     telegram::{
         CallbackQuery, CallbackQueryAnswer, ChatAction, ChatId, InlineKeyboardButton,
         InlineKeyboardMarkup, Message as TelegramMessage, MessageDraftId, MessageTag,
-        SendMessageOptions, Telegram, TelegramClientError, Update, UpdateTag,
+        SendMessageOptions, Telegram, TelegramClientError, TelegramUser, Update, UpdateTag,
     },
 };
 use aisdk::core::{
@@ -75,7 +75,7 @@ struct DraftStreamState {
 
 #[derive(Debug, Deserialize)]
 struct FollowUpActionsResult {
-    actions: Vec<FollowUpActionResult>,
+    actions: Vec<Vec<FollowUpActionResult>>,
     inline_keyboard: Vec<Vec<InlineKeyboardButton>>,
 }
 
@@ -88,20 +88,22 @@ struct FollowUpActionResult {
 
 impl FollowUpActionsResult {
     fn log_actions(&self) {
-        for action in &self.actions {
-            match (&action.key, &action.prompt, &action.url) {
-                (Some(key), Some(prompt), None) => {
-                    log::debug!("follow up action key {key} maps to prompt {prompt}");
+        for row in &self.actions {
+            for action in row {
+                match (&action.key, &action.prompt, &action.url) {
+                    (Some(key), Some(prompt), None) => {
+                        log::debug!("follow up action key {key} maps to prompt {prompt}");
+                    }
+                    (None, None, Some(url)) => {
+                        log::debug!("menu action opens url {url}");
+                    }
+                    (Some(_key), None, None) => {}
+                    (None, Some(_prompt), None) => {}
+                    (None, None, None) => {}
+                    (Some(_key), Some(_prompt), Some(_url)) => {}
+                    (Some(_key), None, Some(_url)) => {}
+                    (None, Some(_prompt), Some(_url)) => {}
                 }
-                (None, None, Some(url)) => {
-                    log::debug!("menu action opens url {url}");
-                }
-                (Some(_key), None, None) => {}
-                (None, Some(_prompt), None) => {}
-                (None, None, None) => {}
-                (Some(_key), Some(_prompt), Some(_url)) => {}
-                (Some(_key), None, Some(_url)) => {}
-                (None, Some(_prompt), Some(_url)) => {}
             }
         }
     }
@@ -197,19 +199,30 @@ where
     let chat_id = message.chat.id;
     let draft_id = MessageDraftId::new(message.message_id)
         .ok_or(ProcessError::InvalidDraftId(message.message_id))?;
+    let system_prompt_suffix = telegram_user_system_prompt_suffix(message.from.as_ref());
     let prompt = to_prompt(message);
 
     if prompt.is_empty() {
         return Ok(());
     }
 
-    process_prompt(chat_id, draft_id, prompt, storage, config, telegram).await
+    process_prompt(
+        chat_id,
+        draft_id,
+        prompt,
+        system_prompt_suffix,
+        storage,
+        config,
+        telegram,
+    )
+    .await
 }
 
 async fn process_prompt<S>(
     chat_id: ChatId,
     draft_id: MessageDraftId,
     prompt: Messages,
+    system_prompt_suffix: Option<String>,
     storage: &S,
     config: &Config,
     telegram: &Telegram,
@@ -222,7 +235,8 @@ where
             let history = append_prompt_messages(storage, chat_id, prompt)?;
             let input_count = history.len();
 
-            let mut response = llm::stream_with_tool(history, config).await?;
+            let mut response =
+                llm::stream_with_tool(history, config, system_prompt_suffix.as_deref()).await?;
 
             let draft_state =
                 match consume_response_stream(telegram, chat_id, draft_id, &mut response).await {
@@ -416,6 +430,24 @@ where
         })
 }
 
+fn telegram_user_system_prompt_suffix(user: Option<&TelegramUser>) -> Option<String> {
+    match user {
+        Some(user) => match &user.language_code {
+            Some(language_code) => Some(format!(
+                "You are talking to {}, prefer language {} (IETF BCP 47 language tag).",
+                user.first_name, language_code
+            )),
+            None => Some(format!(
+                "You are talking to {}. Engage using the same language as the user's message.",
+                user.first_name
+            )),
+        },
+        None => Some(String::from(
+            "Engage using the same language as the user's message.",
+        )),
+    }
+}
+
 fn follow_up_actions_from_response_messages(
     messages: &[AiMessage],
     input_count: usize,
@@ -466,6 +498,7 @@ where
     S: MessageStorage,
 {
     let callback_query_id = callback_query.id;
+    let system_prompt_suffix = telegram_user_system_prompt_suffix(Some(&callback_query.from));
 
     match (callback_query.data, callback_query.message) {
         (Some(key), Some(message)) => {
@@ -480,6 +513,7 @@ where
                 message.chat.id,
                 draft_id,
                 vec![AiMessage::User(UserMessage::new(selected_key_prompt(&key)))],
+                system_prompt_suffix,
                 storage,
                 config,
                 telegram,
@@ -517,7 +551,7 @@ where
 
 fn selected_key_prompt(key: &str) -> String {
     format!(
-        "The user tapped the menu button with key `{key}`. Use the previous follow_up_actions tool output in this conversation to find the matching prompt for that key, then answer that prompt. Call follow_up_actions exactly once for the new answer."
+        "The user tapped the menu button with key `{key}`. Use the previous follow_up_actions tool output in this conversation to find the matching prompt for that key in the nested action rows, then answer that prompt. Call follow_up_actions exactly once for the new answer."
     )
 }
 
@@ -525,14 +559,15 @@ fn selected_key_prompt(key: &str) -> String {
 mod tests {
     use super::{
         DRAFT_INTERVAL, DraftStreamState, append_prompt_messages, append_response_messages,
-        follow_up_actions_from_response_messages, selected_key_prompt, to_prompt,
+        follow_up_actions_from_response_messages, selected_key_prompt,
+        telegram_user_system_prompt_suffix, to_prompt,
     };
     use crate::{
         llm,
         storage::{InMemoryStorage, MessageStorage},
         telegram::{
             Chat, InlineKeyboardButton, InlineKeyboardMarkup, Location, Message as TelegramMessage,
-            MessageTag,
+            MessageTag, TelegramUser,
         },
     };
     use aisdk::core::{
@@ -547,6 +582,7 @@ mod tests {
     fn text_message_becomes_user_prompt() {
         let prompt = to_prompt(TelegramMessage {
             message_id: 1,
+            from: None,
             chat: Chat { id: 42 },
             tag: MessageTag::Text {
                 text: String::from("hello"),
@@ -567,6 +603,7 @@ mod tests {
     fn location_message_becomes_user_prompt() {
         let prompt = to_prompt(TelegramMessage {
             message_id: 1,
+            from: None,
             chat: Chat { id: 42 },
             tag: MessageTag::Location {
                 location: Location {
@@ -597,6 +634,7 @@ mod tests {
         let chat_id = 42;
         let prompt = to_prompt(TelegramMessage {
             message_id: 1,
+            from: None,
             chat: Chat { id: chat_id },
             tag: MessageTag::Location {
                 location: Location {
@@ -645,7 +683,7 @@ mod tests {
             chat_id,
             AiMessage::Tool(tool_result(
                 llm::FOLLOW_UP_ACTIONS_TOOL_NAME,
-                r#"{"actions":[{"key":"old","label":"Old","prompt":"Old prompt"}],"inline_keyboard":[[{"text":"Old","callback_data":"old"}]]}"#,
+                r#"{"actions":[[{"key":"old","label":"Old","prompt":"Old prompt"}]],"inline_keyboard":[[{"text":"Old","callback_data":"old"}]]}"#,
             )),
         )?;
 
@@ -679,7 +717,7 @@ mod tests {
             )),
             AiMessage::Tool(tool_result(
                 llm::FOLLOW_UP_ACTIONS_TOOL_NAME,
-                r#"{"actions":[{"key":"next","label":"Next","prompt":"Next prompt"}],"inline_keyboard":[[{"text":"Next","callback_data":"next"}]]}"#,
+                r#"{"actions":[[{"key":"next","label":"Next","prompt":"Next prompt"}]],"inline_keyboard":[[{"text":"Next","callback_data":"next"}]]}"#,
             )),
             AiMessage::Assistant(AssistantMessage::new(
                 LanguageModelResponseContentType::Text(String::from("final answer")),
@@ -717,6 +755,45 @@ mod tests {
 
         assert!(prompt.contains("explain:concepts"));
         assert!(prompt.contains("previous follow_up_actions tool output"));
+        assert!(prompt.contains("nested action rows"));
+    }
+
+    #[test]
+    fn telegram_user_system_prompt_suffix_uses_language_code() {
+        let suffix = telegram_user_system_prompt_suffix(Some(&TelegramUser {
+            first_name: String::from("Rick"),
+            language_code: Some(String::from("es-AR")),
+        }))
+        .expect("suffix should exist");
+
+        assert_eq!(
+            suffix,
+            "You are talking to Rick, prefer language es-AR (IETF BCP 47 language tag)."
+        );
+    }
+
+    #[test]
+    fn telegram_user_system_prompt_suffix_falls_back_to_message_language() {
+        let suffix = telegram_user_system_prompt_suffix(Some(&TelegramUser {
+            first_name: String::from("Rick"),
+            language_code: None,
+        }))
+        .expect("suffix should exist");
+
+        assert_eq!(
+            suffix,
+            "You are talking to Rick. Engage using the same language as the user's message."
+        );
+    }
+
+    #[test]
+    fn telegram_user_system_prompt_suffix_handles_missing_user() {
+        let suffix = telegram_user_system_prompt_suffix(None).expect("suffix should exist");
+
+        assert_eq!(
+            suffix,
+            "Engage using the same language as the user's message."
+        );
     }
 
     #[test]
@@ -768,33 +845,34 @@ mod tests {
             AiMessage::User(aisdk::core::UserMessage::new("hello")),
             AiMessage::Tool(tool_result(
                 llm::FOLLOW_UP_ACTIONS_TOOL_NAME,
-                r#"{"actions":[{"key":"old","label":"Old","prompt":"Old prompt"}],"inline_keyboard":[[{"text":"Old","callback_data":"old"}]]}"#,
+                r#"{"actions":[[{"key":"old","label":"Old","prompt":"Old prompt"}]],"inline_keyboard":[[{"text":"Old","callback_data":"old"}]]}"#,
             )),
             AiMessage::Tool(tool_result(
                 llm::FOLLOW_UP_ACTIONS_TOOL_NAME,
-                r#"{"actions":[{"key":"new","label":"New","prompt":"New prompt"},{"key":"details","label":"Details","prompt":"Details prompt"}],"inline_keyboard":[[{"text":"New","callback_data":"new"}],[{"text":"Details","callback_data":"details"}]]}"#,
+                r#"{"actions":[[{"key":"new","label":"New","prompt":"New prompt"},{"key":"details","label":"Details","prompt":"Details prompt"}]],"inline_keyboard":[[{"text":"New","callback_data":"new"},{"text":"Details","callback_data":"details"}]]}"#,
             )),
         ];
 
         let actions = follow_up_actions_from_response_messages(&messages, 1)
             .expect("follow up actions should be extracted");
 
-        assert_eq!(actions.actions.len(), 2);
-        assert_eq!(actions.actions[0].key.as_deref(), Some("new"));
-        assert_eq!(actions.actions[0].prompt.as_deref(), Some("New prompt"));
+        assert_eq!(actions.actions.len(), 1);
+        assert_eq!(actions.actions[0].len(), 2);
+        assert_eq!(actions.actions[0][0].key.as_deref(), Some("new"));
+        assert_eq!(actions.actions[0][0].prompt.as_deref(), Some("New prompt"));
         assert_eq!(
             actions.into_keyboard(),
             InlineKeyboardMarkup {
-                inline_keyboard: vec![
-                    vec![InlineKeyboardButton::CallbackData {
+                inline_keyboard: vec![vec![
+                    InlineKeyboardButton::CallbackData {
                         text: String::from("New"),
                         callback_data: String::from("new"),
-                    }],
-                    vec![InlineKeyboardButton::CallbackData {
+                    },
+                    InlineKeyboardButton::CallbackData {
                         text: String::from("Details"),
                         callback_data: String::from("details"),
-                    }]
-                ]
+                    }
+                ]]
             }
         );
     }

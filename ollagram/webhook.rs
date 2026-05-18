@@ -215,6 +215,11 @@ mod tests {
             "update_id": 3,
             "callback_query": {
                 "id": "callback-1",
+                "from": {
+                    "id": 100,
+                    "is_bot": false,
+                    "first_name": "User"
+                },
                 "message": {
                     "message_id": 4,
                     "chat": { "id": 84 },
@@ -248,6 +253,11 @@ mod tests {
             "update_id": 5,
             "callback_query": {
                 "id": "callback-2",
+                "from": {
+                    "id": 100,
+                    "is_bot": false,
+                    "first_name": "User"
+                },
                 "message": {
                     "message_id": 6,
                     "chat": { "id": 126 },

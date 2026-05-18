@@ -578,10 +578,18 @@ pub enum UpdateTag {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Message {
     pub message_id: i64,
+    #[serde(rename = "from")]
+    pub from: Option<TelegramUser>,
     pub chat: Chat,
 
     #[serde(flatten)]
     pub tag: MessageTag,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TelegramUser {
+    pub first_name: String,
+    pub language_code: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -637,6 +645,8 @@ pub struct Location {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CallbackQuery {
     pub id: String,
+    #[serde(rename = "from")]
+    pub from: TelegramUser,
     #[serde(default, deserialize_with = "deserialize_optional_message")]
     pub message: Option<Message>,
     pub data: Option<String>,
@@ -705,6 +715,12 @@ mod tests {
                     "update_id": 1,
                     "message": {
                         "message_id": 2,
+                        "from": {
+                            "id": 100,
+                            "is_bot": false,
+                            "first_name": "User",
+                            "language_code": "en"
+                        },
                         "chat": {
                             "id": 42
                         },
@@ -734,6 +750,13 @@ mod tests {
                         MessageTag::Location { location: _ } => panic!("expected text message"),
                         MessageTag::Text { text } => {
                             assert_eq!(message.chat.id, 42);
+                            match &message.from {
+                                Some(user) => {
+                                    assert_eq!(user.first_name, "User");
+                                    assert_eq!(user.language_code.as_deref(), Some("en"));
+                                }
+                                None => panic!("expected message user"),
+                            }
                             assert_eq!(text, "hello");
                         }
                         MessageTag::Unsupported(_value) => panic!("expected text message"),
@@ -784,6 +807,8 @@ mod tests {
                 UpdateTag::Unsupported(_value) => panic!("expected callback query"),
                 UpdateTag::CallbackQuery { callback_query } => {
                     assert_eq!(callback_query.id, "callback-1");
+                    assert_eq!(callback_query.from.first_name, "User");
+                    assert_eq!(callback_query.from.language_code, None);
                     assert_eq!(callback_query.data, Some(String::from("Summarize this")));
                     match &callback_query.message {
                         Some(message) => {
